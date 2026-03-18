@@ -1,3 +1,16 @@
+---
+name: materials-project
+description: >
+  Fetch bulk crystal structures from Materials Project for computational catalysis workflows.
+  Triggers: "fetch bulk", "get structure from Materials Project", "download crystal structure",
+  "MP structure", "bulk POSCAR", "get me [element] bulk", "materials project [formula]",
+  "polymorph", "most stable structure of [formula]".
+  Use when: user wants a bulk crystal structure by formula (Pt, TiO2) or Materials Project ID (mp-126),
+  needs to compare polymorphs, or is starting a catalysis workflow that requires a bulk input.
+  NOT for: surface generation, adsorbate placement, or MLIP relaxation (those are separate skills).
+metadata: {"requires": {"packages": ["mp-api", "pymatgen"], "env": ["MP_API_KEY"], "python": "3.11+"}}
+---
+
 # Materials Project Bulk Structure Retrieval
 
 Fetch and prepare bulk crystal structures from the Materials Project database for use in computational catalysis workflows.
