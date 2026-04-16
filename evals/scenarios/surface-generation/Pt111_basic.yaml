@@ -1,0 +1,17 @@
+name: Pt111_basic
+skill: surface-generation
+setup:
+  - from: evals/fixtures/Pt_bulk.vasp
+    to: Pt_bulk.vasp
+prompt: |
+  A Pt bulk structure is provided at Pt_bulk.vasp in the current directory.
+  Generate a Pt(111) surface slab with the bottom half fixed via selective
+  dynamics. Save the resulting slab as a VASP POSCAR in the current directory.
+expect:
+  artifacts:
+    - path_glob: "Pt_111*.vasp"
+      min_count: 1
+      checks:
+        - pymatgen_parseable
+        - composition: "Pt"
+        - has_selective_dynamics

@@ -11,3 +11,14 @@ build/
 *.xyz
 *.traj
 *.log
+
+# Keep structure fixtures used by tests and evals
+!tests/fixtures/*.vasp
+!tests/fixtures/*.cif
+!tests/fixtures/*.xyz
+!evals/fixtures/*.vasp
+!evals/fixtures/*.cif
+!evals/fixtures/*.xyz
+
+# Eval run outputs
+evals/results/

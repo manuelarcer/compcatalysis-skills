@@ -41,8 +41,23 @@ def fetch_by_mpid(api_key, mp_id):
     from mp_api.client import MPRester
 
     with MPRester(api_key) as mpr:
-        doc = mpr.materials.summary.get_data_by_id(mp_id)
-        return doc
+        docs = mpr.materials.summary.search(
+            material_ids=[mp_id],
+            fields=[
+                "material_id",
+                "formula_pretty",
+                "structure",
+                "symmetry",
+                "energy_above_hull",
+                "formation_energy_per_atom",
+                "band_gap",
+                "nsites",
+            ],
+        )
+        if not docs:
+            print(f"No structure found for '{mp_id}'", file=sys.stderr)
+            sys.exit(1)
+        return docs[0]
 
 
 def fetch_by_formula(api_key, formula, max_ehull=0.025):

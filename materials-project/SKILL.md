@@ -88,7 +88,7 @@ python fetch_bulk.py --formula TiO2 --list-polymorphs
 This skill is typically the **first step** in a catalysis workflow:
 
 1. **Fetch bulk** (this skill) → produces bulk POSCAR
-2. **Optimize bulk** → relax with MLIP (`optimize run --structure bulk.vasp --mlip uma-s-1p1 --uma-task omat`)
+2. **Optimize bulk** → relax with MLIP (`optimize run --structure bulk.vasp --mlip uma-s-1p2 --uma-task omat`)
 3. **Generate surface** → pymatgen SlabGenerator on relaxed bulk
 4. **Place adsorbates** → enumerate sites, add species
 5. **Relax slab + adsorbate** → MLIP optimization with constrained bottom layers

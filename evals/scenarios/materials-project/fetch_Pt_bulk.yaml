@@ -1,0 +1,14 @@
+name: fetch_Pt_bulk
+skill: materials-project
+requires_env:
+  - MP_API_KEY
+prompt: |
+  Fetch the conventional bulk structure of platinum (Pt) from the Materials
+  Project and save it as Pt_bulk.vasp in the current working directory.
+expect:
+  artifacts:
+    - path: "Pt_bulk.vasp"
+      checks:
+        - exists
+        - pymatgen_parseable
+        - composition: "Pt"

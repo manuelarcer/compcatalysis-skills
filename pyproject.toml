@@ -1,0 +1,11 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [
+    "materials-project/scripts",
+    "surface-generation/scripts",
+    "adsorbate-placement/scripts",
+]
+markers = [
+    "network: hits live Materials Project API; requires MP_API_KEY and network",
+]
+addopts = "-ra --strict-markers"

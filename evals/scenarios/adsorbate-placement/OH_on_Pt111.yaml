@@ -1,0 +1,17 @@
+name: OH_on_Pt111
+skill: adsorbate-placement
+setup:
+  - from: evals/fixtures/Pt111_slab.vasp
+    to: slab.vasp
+prompt: |
+  A clean Pt(111) slab is provided at slab.vasp in the current directory.
+  Place the built-in OH adsorbate on each ontop Pt site. Use the default
+  auto-height (covalent radii). Write outputs under the current directory.
+expect:
+  artifacts:
+    - path_glob: "OH/Pt_top_*/input.vasp"
+      min_count: 1
+      checks:
+        - ase_parseable
+        - contains_species: "O"
+        - contains_species: "H"
