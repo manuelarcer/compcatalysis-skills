@@ -29,14 +29,16 @@ with `coeff = 1.0` for whole-molecule references (CO, CO₂, H₂O, NH₃) and
 `coeff = 0.5` when referencing half of a diatomic (O ↔ ½O₂, H ↔ ½H₂).
 
 For OER intermediates referenced to H₂O / H₂ via the computational
-hydrogen electrode you usually need a **derived reference**:
+hydrogen electrode (CHE), use the **named composite-reference** form in
+the JSON config (see "Batch mode" below). One-shot CLI mode supports only
+single-traj references with a scalar coefficient.
 
-| Adsorbate | Reference | Builder |
+| Adsorbate | Reference (CHE) | Form |
 |---|---|---|
-| O\* | ½O₂ | `--coeff 0.5 --ads-ref O2_gas/opt.traj` |
-| OH\* | H₂O − ½H₂ | compute manually: pass H₂O as ref with coeff 1.0, then subtract 0.5·E(H₂) yourself, OR use a config with two passes |
-| OOH\* | 2·H₂O − 1.5·H₂ | derived; can't be expressed with a single `(coeff, ref)` pair — use external math or a custom reference traj |
-| CO\* | CO | `--coeff 1.0 --ads-ref CO_gas/opt.traj` |
+| O\* | ½ O₂ | single-ref, `--coeff 0.5 --ads-ref O2_gas/opt.traj` |
+| OH\* | H₂O − ½ H₂ | composite, JSON config only |
+| OOH\* | 2·H₂O − 1.5·H₂ | composite, JSON config only |
+| CO\* | CO | single-ref, `--coeff 1.0 --ads-ref CO_gas/opt.traj` |
 
 Negative `E_ads` = exothermic adsorption.
 
@@ -82,21 +84,35 @@ python compute_eads.py \
 python compute_eads.py --config eads.json --output eads.csv
 ```
 
-`eads.json`:
+`eads.json` (with named composite references for OER intermediates):
 
 ```json
 {
   "slab": "clean/opt.traj",
+  "references": {
+    "OH":  [{"traj": "gas/H2O/opt.traj", "coeff":  1.0},
+            {"traj": "gas/H2/opt.traj",  "coeff": -0.5}],
+    "OOH": [{"traj": "gas/H2O/opt.traj", "coeff":  2.0},
+            {"traj": "gas/H2/opt.traj",  "coeff": -1.5}],
+    "O":   [{"traj": "gas/O2/opt.traj",  "coeff":  0.5}]
+  },
   "calculations": [
     {"label": "CO_top_0", "slab_ads": "CO/Pt_top_0/opt.traj",
-     "ref": "CO_gas/opt.traj"},
-    {"label": "CO_top_1", "slab_ads": "CO/Pt_top_1/opt.traj",
-     "ref": "CO_gas/opt.traj"},
+     "ref": "gas/CO/opt.traj"},
+    {"label": "OH_top_0", "slab_ads": "OH/Pt_top_0/opt.traj",
+     "ref": "OH"},
+    {"label": "OOH_top_0", "slab_ads": "OOH/Pt_top_0/opt.traj",
+     "ref": "OOH"},
     {"label": "O_fcc",    "slab_ads": "O/fcc/opt.traj",
-     "ref": "O2_gas/opt.traj", "coeff": 0.5}
+     "ref": "O"}
   ]
 }
 ```
+
+The `ref` field is resolved as:
+- if it matches a key in `references`, expand to that composite formula;
+- otherwise treat as a path to a single trajectory (back-compat with
+  pre-composite configs).
 
 #### Arguments
 
@@ -110,12 +126,29 @@ python compute_eads.py --config eads.json --output eads.csv
 | `--coeff` | Stoichiometric coefficient on the reference | `1.0` |
 | `--output` | Output CSV path | `eads.csv` |
 | `--append` | Append rather than overwrite | off |
+| `--no-consistency-check` | Skip the cross-trajectory MLIP+task-head consistency check | off |
 
 `--config` is mutually exclusive with the per-trajectory flags.
 
 #### Output CSV columns
 
-`label, slab, slab_ads, ads_ref, coeff, E_slab_eV, E_slab_ads_eV, E_ref_eV, E_ads_eV`
+`label, slab, slab_ads, ads_ref, ref_summary, coeff, E_slab_eV, E_slab_ads_eV, E_ref_eV, E_ads_eV`
+
+`coeff` is the scalar for single-ref calculations and the literal string
+`composite` for composite-reference calculations; in the composite case the
+human-readable formula is in `ref_summary` (e.g. `1·H2O + -0.5·H2`).
+
+#### Task-head consistency check
+
+The script reads the `compcat_run.json` sidecar produced by
+`relaxation-orchestration` next to each input trajectory and refuses if the
+MLIP model or UMA task head differs across inputs. This catches the silent
+"clean slab relaxed with `omat`, slab+ads relaxed with `oc20`" mistake at
+the boundary instead of letting it produce a plausible-but-wrong energy.
+
+If your trajectories predate the sidecar convention (or come from a
+non-`mlip_platform` source), the check warns rather than failing. To skip
+it entirely, pass `--no-consistency-check`.
 
 ## Pitfalls
 

@@ -65,7 +65,7 @@ python batch_relax.py --tree placements/ --dry-run
 | `--tree` | Directory tree to scan for inputs | — |
 | `--pattern` | Filename pattern under `--tree` | `input.vasp` |
 | `--mlip` | MLIP model (`uma-s-1p1`, `uma-s-1p2`, `mace`, `7net-mf-ompa`, `auto`) | `uma-s-1p1` |
-| `--uma-task` | UMA task head: `omat`, `oc20`, `omol`, `odac` | `oc20` |
+| `--uma-task` | UMA task head: `omat`, `oc20`, `omol`, `odac`, or `auto` | `auto` |
 | `--optimizer` | `fire`, `bfgs`, `lbfgs`, ... | `fire` |
 | `--fmax` | Force convergence threshold (eV/Å) | `0.03` |
 | `--max-steps` | Maximum optimization steps | `300` |
@@ -96,16 +96,38 @@ The UMA task head determines which energy reference the model uses. **All
 calculations that contribute to a single energy comparison must use the same
 task head**, or the energies are not subtractable.
 
-| System | Task head | Notes |
-|---|---|---|
-| Bulk crystal optimization | `omat` | General materials, no surfaces |
-| Metal slab + adsorbate + gas-phase reference (Pt, Cu, Ni, …) | `oc20` | The OC20 head is the canonical surface-chemistry head |
-| Oxide slab + adsorbate + gas-phase reference (CoOOH, Co₃O₄, TiO₂) | `oc22` | OC22 covers oxide surfaces |
-| Solid–liquid interface with explicit solvent | `oc25` | Use only when explicit water/electrolyte is present |
-| Isolated molecules in vacuum (no surface in the comparison) | `omol` | Not used when the molecule is a reference for an adsorption energy on a slab — use the surface task head instead |
+| System | Task head | Status | Notes |
+|---|---|---|---|
+| Bulk crystal optimization | `omat` | supported | General materials, no surfaces |
+| Metal slab + adsorbate + gas-phase reference (Pt, Cu, Ni, …) | `oc20` | supported | OC20 is the canonical surface-chemistry head |
+| Oxide slab + adsorbate + gas-phase reference (CoOOH, Co₃O₄, TiO₂) | `oc22` | requires `mlip_platform` to expose it | use `oc20` until then and verify against literature |
+| Solid–liquid interface with explicit solvent | `oc25` | requires `mlip_platform` to expose it | only when explicit water/electrolyte is present |
+| Isolated molecules in vacuum | `omol` | supported | Not used when the molecule is a reference for an adsorption energy on a slab — use the surface task head instead |
+| OC20 datasets / DAC | `odac` | supported | rare in standard catalysis workflows |
 
 For any one workflow (`clean slab` + `slab+ads` + `gas-phase ads ref`), pick
 one task head and use it for all three.
+
+### `--uma-task auto` (default)
+
+The script default is `auto`. It only picks a task automatically when it
+can be **certain**:
+
+- All inputs are bulk crystals (no vacuum direction) → `omat`
+- All inputs are isolated molecules in a vacuum box (≥2 vacuum directions
+  and ≤30 atoms) → `omol`
+
+Anything else (slabs, adsorbate-on-slab, mixed batches) → the script
+**refuses with a non-zero exit and prints the decision table**. The agent
+must pick explicitly. This prevents the silent-wrong-energy class of bug
+where `oc20` defaults silently get used on bulk crystals (or vice versa).
+
+### Run-metadata sidecar
+
+Every successful relaxation writes `compcat_run.json` next to
+`opt_final.vasp` capturing `{mlip, uma_task, fmax, optimizer}`. The
+adsorption-energy skill reads these to verify all input trajectories share
+the same MLIP and task head, and refuses if they don't.
 
 ### Convergence thresholds
 

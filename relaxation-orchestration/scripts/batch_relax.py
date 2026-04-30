@@ -28,9 +28,13 @@ Usage:
 
 import argparse
 import csv
+import json
 import sys
 import time
 from pathlib import Path
+
+VALID_UMA_TASKS = ("omat", "oc20", "omol", "odac")
+RUN_META_FILENAME = "compcat_run.json"
 
 
 def find_structures(tree: Path, pattern: str) -> list[Path]:
@@ -41,20 +45,112 @@ def find_structures(tree: Path, pattern: str) -> list[Path]:
     return sorted(tree.rglob(pattern))
 
 
-def is_already_converged(structure: Path) -> bool:
-    """Heuristic check: a previous run produced opt_final.vasp + a CSV with
-    a final fmax row below the threshold recorded in opt_params.txt."""
+def is_already_converged(structure: Path, fmax: float | None = None) -> bool:
+    """Decide if a prior run satisfied the requested convergence.
+
+    Behavioral check (not string-grep): the run is considered converged if
+      (a) opt_final.vasp + opt_convergence.csv both exist, AND
+      (b) the last row of opt_convergence.csv has fmax <= the requested
+          threshold (or compcat_run.json's recorded fmax if no `fmax` is
+          passed in here).
+    """
     out_dir = structure.parent
     final_vasp = out_dir / "opt_final.vasp"
     conv_csv = out_dir / "opt_convergence.csv"
-    params = out_dir / "opt_params.txt"
-    if not (final_vasp.exists() and conv_csv.exists() and params.exists()):
+    if not (final_vasp.exists() and conv_csv.exists()):
         return False
+
+    threshold = fmax
+    meta = out_dir / RUN_META_FILENAME
+    if threshold is None and meta.exists():
+        try:
+            threshold = float(json.loads(meta.read_text()).get("fmax", 0))
+        except (OSError, ValueError, json.JSONDecodeError):
+            threshold = None
+    if threshold is None:
+        return False
+
     try:
-        text = params.read_text()
-        return "Converged:         True" in text
-    except OSError:
+        with open(conv_csv) as f:
+            rows = list(csv.DictReader(f))
+        if not rows:
+            return False
+        # mlip_platform writes fmax(eV/Å) — pick whatever fmax-ish column exists
+        last = rows[-1]
+        for key in ("fmax(eV/Å)", "fmax(eV/A)", "fmax", "Fmax"):
+            if key in last:
+                return float(last[key]) <= threshold
         return False
+    except (OSError, ValueError):
+        return False
+
+
+def has_vacuum(atoms, axis_threshold: float = 5.0) -> list[bool]:
+    """Return a bool per cell axis: True if there's >= axis_threshold Å of
+    empty space in that direction. A bulk has all False; a slab has exactly
+    one True (typically c); a molecule in a vacuum box has all True."""
+    import numpy as np
+
+    pos = atoms.get_positions()
+    cell = atoms.get_cell()
+    flags = []
+    for i in range(3):
+        axis = cell[i]
+        norm = np.linalg.norm(axis)
+        if norm < 1e-6:
+            flags.append(True)  # degenerate cell axis = effectively unbounded
+            continue
+        unit = axis / norm
+        proj = pos @ unit
+        flags.append((norm - (proj.max() - proj.min())) >= axis_threshold)
+    return flags
+
+
+def classify_structure(atoms) -> str:
+    """Return one of: 'bulk', 'slab', 'molecule', 'ambiguous'."""
+    flags = has_vacuum(atoms)
+    n_vac = sum(flags)
+    if n_vac == 0:
+        return "bulk"
+    if n_vac == 1:
+        return "slab"
+    if n_vac >= 2 and len(atoms) <= 30:
+        return "molecule"
+    return "ambiguous"
+
+
+def infer_uma_task(structures: list[Path]) -> str | None:
+    """Return a UMA task head only when every input is unambiguous and the
+    task is one we can pick safely (omat for bulks, omol for small isolated
+    molecules). Otherwise return None — caller refuses with a help message."""
+    from ase.io import read
+
+    classes = set()
+    for s in structures:
+        try:
+            atoms = read(str(s))
+        except Exception:
+            return None
+        classes.add(classify_structure(atoms))
+
+    if classes == {"bulk"}:
+        return "omat"
+    if classes == {"molecule"}:
+        return "omol"
+    return None
+
+
+def write_run_metadata(out_dir: Path, *, mlip: str, uma_task: str,
+                        fmax: float, optimizer: str) -> None:
+    """Persist the run settings next to opt_final.vasp so downstream
+    skills (adsorption-energy) can verify task-head consistency."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / RUN_META_FILENAME).write_text(json.dumps({
+        "mlip": mlip,
+        "uma_task": uma_task,
+        "fmax": fmax,
+        "optimizer": optimizer,
+    }, indent=2))
 
 
 def relax_one(structure: Path, *, mlip: str, uma_task: str, optimizer: str,
@@ -75,6 +171,8 @@ def relax_one(structure: Path, *, mlip: str, uma_task: str, optimizer: str,
         atoms=atoms, optimizer=optimizer, fmax=fmax, max_steps=max_steps,
         output_dir=structure.parent, model_name=mlip, verbose=verbose,
     )
+    write_run_metadata(structure.parent, mlip=mlip, uma_task=uma_task,
+                        fmax=fmax, optimizer=optimizer)
     return {
         "structure": str(structure),
         "converged": bool(converged),
@@ -106,9 +204,13 @@ def main():
                         help="Filename pattern under --tree (default: input.vasp)")
     parser.add_argument("--mlip", default="uma-s-1p1",
                         help="MLIP model (default: uma-s-1p1; or 'auto')")
-    parser.add_argument("--uma-task", default="oc20",
-                        choices=["omat", "oc20", "omol", "odac"],
-                        help="UMA task head (default: oc20 for catalysis surfaces)")
+    parser.add_argument("--uma-task", default="auto",
+                        choices=["auto", *VALID_UMA_TASKS],
+                        help="UMA task head. 'auto' picks omat for bulks "
+                             "and omol for isolated molecules; for slabs / "
+                             "adsorbate systems you must pass an explicit "
+                             "task (oc20 metal surfaces, oc22 oxides, oc25 "
+                             "solid–liquid interfaces — see SKILL.md).")
     parser.add_argument("--optimizer", default="fire",
                         help="Optimizer: fire, bfgs, lbfgs, ... (default: fire)")
     parser.add_argument("--fmax", type=float, default=0.03,
@@ -133,9 +235,30 @@ def main():
                   file=sys.stderr)
             sys.exit(1)
 
+    if args.uma_task == "auto":
+        inferred = infer_uma_task(structures)
+        if inferred is None:
+            print(
+                "ERROR: could not safely infer --uma-task for the given "
+                "structures. The 'auto' setting only handles all-bulks "
+                "(omat) and all-molecules (omol). For slabs / adsorbate "
+                "systems pass an explicit --uma-task. See the SKILL.md "
+                "task-head decision table:\n"
+                "  oc20 = metal surface chemistry (Pt, Cu, Ni, ...)\n"
+                "  oc22 = oxide surfaces (CoOOH, Co3O4, TiO2, ...) "
+                "[requires mlip_platform support]\n"
+                "  oc25 = solid–liquid interfaces with explicit solvent "
+                "[requires mlip_platform support]\n"
+                "  omat = bulk crystals\n"
+                "  omol = isolated molecules in vacuum",
+                file=sys.stderr)
+            sys.exit(2)
+        print(f"Auto-inferred --uma-task = {inferred}")
+        args.uma_task = inferred
+
     pending, skipped = [], []
     for s in structures:
-        if args.resume and is_already_converged(s):
+        if args.resume and is_already_converged(s, fmax=args.fmax):
             skipped.append(s)
         else:
             pending.append(s)

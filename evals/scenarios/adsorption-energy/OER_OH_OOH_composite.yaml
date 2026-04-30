@@ -1,0 +1,43 @@
+name: OER_OH_OOH_composite
+skill: adsorption-energy
+setup:
+  # Trajectories — slab + adsorbed OH/OOH + gas-phase H2O and H2 references.
+  - from: evals/fixtures/OER_clean_opt.traj
+    to: clean/opt.traj
+  - from: evals/fixtures/OER_OH_opt.traj
+    to: OH/Pt_top_0/opt.traj
+  - from: evals/fixtures/OER_OOH_opt.traj
+    to: OOH/Pt_top_0/opt.traj
+  - from: evals/fixtures/OER_H2O_gas_opt.traj
+    to: gas/H2O/opt.traj
+  - from: evals/fixtures/OER_H2_gas_opt.traj
+    to: gas/H2/opt.traj
+  # The compcat_run.json sidecars (so the consistency check passes).
+  - from: evals/fixtures/OER_clean_opt_compcat_run.json
+    to: clean/compcat_run.json
+  - from: evals/fixtures/OER_OH_opt_compcat_run.json
+    to: OH/Pt_top_0/compcat_run.json
+  - from: evals/fixtures/OER_OOH_opt_compcat_run.json
+    to: OOH/Pt_top_0/compcat_run.json
+  - from: evals/fixtures/OER_H2O_gas_opt_compcat_run.json
+    to: gas/H2O/compcat_run.json
+  - from: evals/fixtures/OER_H2_gas_opt_compcat_run.json
+    to: gas/H2/compcat_run.json
+prompt: |
+  I have relaxed Pt(111) slab and slab+OH*, slab+OOH* configurations, plus
+  gas-phase H2O and H2 reference trajectories:
+    ./clean/opt.traj
+    ./OH/Pt_top_0/opt.traj
+    ./OOH/Pt_top_0/opt.traj
+    ./gas/H2O/opt.traj
+    ./gas/H2/opt.traj
+  Compute the adsorption energy of OH* (referenced as H2O - 1/2 H2) and
+  OOH* (referenced as 2*H2O - 3/2 H2) using the computational hydrogen
+  electrode convention. Use the adsorption-energy skill's JSON-config batch
+  mode with named composite references. Save the result to ./eads.csv with
+  rows labelled OH_top_0 and OOH_top_0.
+expect:
+  artifacts:
+    - path: "eads.csv"
+      checks:
+        - exists
