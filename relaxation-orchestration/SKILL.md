@@ -64,9 +64,9 @@ python batch_relax.py --tree placements/ --dry-run
 | `--structure` | Single input structure path | — |
 | `--tree` | Directory tree to scan for inputs | — |
 | `--pattern` | Filename pattern under `--tree` | `input.vasp` |
-| `--mlip` | MLIP model (`uma-s-1p1`, `uma-s-1p2`, `mace`, `7net-mf-ompa`, `auto`) | `uma-s-1p1` |
+| `--mlip` | MLIP model (`uma-s-1p1`, `uma-s-1p2`, `mace`, `7net-mf-ompa`, `auto`) | `auto` |
 | `--uma-task` | UMA task head: `omat`, `oc20`, `omol`, `odac`, or `auto` | `auto` |
-| `--optimizer` | `fire`, `bfgs`, `lbfgs`, ... | `fire` |
+| `--optimizer` | `bfgs`, `lbfgs`, `fire`, ... | `bfgs` |
 | `--fmax` | Force convergence threshold (eV/Å) | `0.03` |
 | `--max-steps` | Maximum optimization steps | `300` |
 | `--resume` | Skip structures with an existing converged run | off |
@@ -142,12 +142,16 @@ the same MLIP and task head, and refuses if they don't.
 
 ### Optimizer choice
 
-- `fire` is the catalysis default. It tolerates noisy MLIP forces better
-  than BFGS-family methods.
-- For very small molecules (≤4 atoms) `bfgs` can be faster.
-- `mlip_platform`'s built-in default is `bfgs` — this script overrides to
-  `fire` for catalysis. Pass `--optimizer bfgs` if you want the platform
-  default back.
+This skill defaults to `bfgs` to match `mlip_platform`'s default — that's
+the platform-validated choice and we don't override it here.
+
+- Switch to `--optimizer fire` when `bfgs` fails to converge or oscillates
+  on noisy MLIP forces (more common on large systems and softer surfaces).
+- For very small molecules (≤4 atoms) `bfgs` is usually fastest.
+- `lbfgs` can be a good middle ground.
+
+If you don't know which to pick, start with the default and only switch
+when the run fails to converge in `max_steps`.
 
 ## Pitfalls
 
@@ -186,10 +190,11 @@ default `--pattern input.vasp` already matches that skill's output naming.
 
 ### Decision logic
 
-- **Picking `--mlip`**: `uma-s-1p1` is the validated catalysis default. Use
-  `uma-s-1p2` only if the user has explicitly asked for the newer
-  checkpoint and has confirmed compatibility. Use `mace` / `7net-mf-ompa`
-  when comparing across MLIPs or when UMA is unavailable.
+- **Picking `--mlip`**: `auto` is the default — it delegates to
+  `mlip_platform.detect_mlip()`, so this skill tracks platform improvements
+  automatically. Pass an explicit name (`uma-s-1p1`, `uma-s-1p2`, `mace`,
+  `7net-mf-ompa`) when you need a specific checkpoint for reproducibility
+  or for cross-MLIP comparisons.
 - **Picking `--uma-task`**: see the table above. When unsure, ask whether
   the system is a metal, oxide, or solid–liquid interface.
 - **Batch vs single**: if the user has more than two structures, prefer

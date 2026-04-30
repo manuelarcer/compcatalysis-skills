@@ -101,15 +101,23 @@ Outputs (in `--output-dir`): `A2B.traj`, `A2B_full.traj`, `neb.log`,
 |---|---|---|
 | `--initial` / `--final` | Optimized IS / FS structure files | required |
 | `--adsorbate-indices` | Indices of moving atoms (used for validation) | required |
-| `--num-images` | Total images including endpoints | `7` |
-| `--mlip` | MLIP model | `uma-s-1p1` |
+| `--num-images` | Total images including endpoints. Required unless `--barrier-estimate` is given. | — |
+| `--barrier-estimate` | Approximate barrier in eV. Derives `--num-images` if not set; warns if explicit value is coarse. | — |
+| `--reaction-type` | `direct` (default, max-disp 3 Å) or `diffusion` (max-disp 8 Å) | `direct` |
+| `--mlip` | MLIP model. `auto` delegates to platform detection. | `auto` |
 | `--uma-task` | UMA task head | `oc20` |
 | `--fmax` | Force convergence on band | `0.05` |
 | `--max-steps` | NEB steps cap | `600` |
 | `--no-climb` | Disable climbing image | climb on by default |
-| `--barrier-estimate` | Rough eV estimate; warns if `--num-images` is too coarse | — |
+| `--max-disp` | Override per-reaction-type max IS→FS displacement | from `--reaction-type` |
+| `--max-jump` | Inter-image jump cap | tracks `--max-disp / 3` |
 | `--monotonic-pairs` | e.g. `36-37` for breaking-bond monotonicity | — |
 | `--skip-pre-validate` / `--skip-post-validate` / `--force` | Escape hatches | off |
+
+`--num-images` has no silent default. Either pass an explicit count or pass
+`--barrier-estimate` and let the script derive it (≈ `max(5, barrier/0.1)`).
+This prevents the failure mode where a sub-eV barrier gets a too-coarse band
+and the TS is skipped.
 
 ## Conventions and Heuristics
 
@@ -117,11 +125,12 @@ These encode lessons from prior MLIP NEB runs.
 
 ### Image count vs. barrier
 
-Approximately one image per 0.1 eV of barrier; minimum 5. The CO\* + O\* →
-CO₂\* run (0.84 eV) used 7 images and converged cleanly. The lower-barrier
-O₂ dissociation (0.63 eV) needed 11 images — coarser grids skipped the TS.
-Pass `--barrier-estimate 0.7` and the script will flag if `--num-images` is
-coarse for that estimate.
+Approximately one image per 0.1 eV of barrier; minimum 5. The script
+**refuses to default**: pass `--num-images N` or `--barrier-estimate <eV>`
+(which derives N). If you pass both and the explicit count is below the
+heuristic for that barrier, you get a warning. Prior catalysis runs:
+CO\* + O\* → CO₂\* (0.84 eV) used 7 images cleanly; O₂ dissociation
+(0.63 eV) needed 11 images — coarser bands skipped the TS.
 
 ### Endpoint preparation, especially for dissociation
 
@@ -193,8 +202,12 @@ computing equilibrium adsorption energies, you compute reaction barriers.
 
 - **Endpoint optimization first.** If `IS_opt.vasp` and `FS_opt.vasp` don't
   exist, run relaxation-orchestration on both before invoking this skill.
-- **Number of images.** Default 7. Pass `--barrier-estimate` and let the
-  warning guide you, or step up to 11+ for sub-eV barriers.
+- **Number of images.** No silent default. Pass `--num-images` explicitly
+  or pass `--barrier-estimate <eV>` and let the script derive it.
+- **Reaction type.** Default `direct` is right for almost all chemical
+  reactions (bond making/breaking at one or two adjacent sites). Use
+  `diffusion` only when the adsorbate genuinely hops multiple sites and
+  you expect IS→FS displacement >3 Å.
 - **Adsorbate indices.** These are the indices of the atoms that *move*
   during the reaction. The substrate is excluded (the validator complains
   if the substrate moves > 0.3 Å).

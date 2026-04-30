@@ -102,12 +102,13 @@ def test_write_summary_noop_on_empty_rows(tmp_path):
 
 # ---- main entry: dry-run, resume, batch -------------------------------------
 
-def _build_fake_mlip_modules(monkeypatch):
+def _build_fake_mlip_modules(monkeypatch, *, detected="uma-s-1p1"):
     """Inject a lightweight fake mlip_platform so `relax_one` runs without the
     real MLIP. ASE is left as the real package so structure classification
     (vacuum detection) works on real .vasp inputs."""
     fake_utils = types.ModuleType("mlip_platform.cli.utils")
     fake_utils.setup_calculator = lambda atoms, mlip, uma_task: atoms
+    fake_utils.detect_mlip = lambda: detected
 
     def fake_run_optimization(atoms, optimizer, fmax, max_steps, output_dir,
                                model_name, verbose, trajectory="opt.traj",
@@ -270,6 +271,41 @@ def test_write_run_metadata(tmp_path):
     data = json.loads(meta_path.read_text())
     assert data == {"mlip": "uma-s-1p1", "uma_task": "oc20",
                     "fmax": 0.03, "optimizer": "fire"}
+
+
+def test_resolve_mlip_passthrough_for_explicit_name(monkeypatch):
+    # No mlip_platform import needed when name is explicit
+    monkeypatch.delitem(sys.modules, "mlip_platform", raising=False)
+    assert batch_relax.resolve_mlip("uma-s-1p2") == "uma-s-1p2"
+
+
+def test_resolve_mlip_auto_calls_detect(monkeypatch):
+    _build_fake_mlip_modules(monkeypatch, detected="mace")
+    assert batch_relax.resolve_mlip("auto") == "mace"
+
+
+def test_import_mlip_platform_friendly_error(monkeypatch, capsys):
+    """Removing mlip_platform from sys.modules and blocking re-import should
+    produce a clean exit-2 with install instructions."""
+    import builtins
+    real_import = builtins.__import__
+
+    def blocked_import(name, *args, **kwargs):
+        if name.startswith("mlip_platform"):
+            raise ImportError("blocked for test")
+        return real_import(name, *args, **kwargs)
+
+    for k in list(sys.modules):
+        if k.startswith("mlip_platform"):
+            monkeypatch.delitem(sys.modules, k, raising=False)
+    monkeypatch.setattr(builtins, "__import__", blocked_import)
+
+    with pytest.raises(SystemExit) as excinfo:
+        batch_relax._import_mlip_platform()
+    assert excinfo.value.code == 2
+    err = capsys.readouterr().err
+    assert "mlip-platform is not available" in err
+    assert "pip install" in err
 
 
 def test_relax_one_writes_metadata(tmp_path, monkeypatch):

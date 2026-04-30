@@ -200,3 +200,120 @@ def test_run_aborts_on_bad_endpoints(tmp_path, monkeypatch, capsys):
     assert rc == 2
     # NEB should not have been invoked
     assert not (tmp_path / "out" / "A2B.traj").exists()
+
+
+# ---- new generality fixes (#7, #8) -----------------------------------------
+
+def test_derive_num_images_heuristic():
+    assert neb_workflow.derive_num_images(0.4) == 5  # floor
+    assert neb_workflow.derive_num_images(0.7) == 7
+    assert neb_workflow.derive_num_images(1.5) == 15
+
+
+def test_run_refuses_without_num_images_or_barrier(tmp_path, monkeypatch, capsys):
+    is_p, fs_p = _build_pair(tmp_path)
+    _inject_fake_mlip(monkeypatch)
+
+    monkeypatch.setattr(sys, "argv", [
+        "neb_workflow.py", "run",
+        "--initial", str(is_p), "--final", str(fs_p),
+        "--adsorbate-indices", "3", "4",
+        "--output-dir", str(tmp_path / "out"),
+    ])
+    rc = neb_workflow.main()
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "no silent default" in err
+    assert "--num-images" in err and "--barrier-estimate" in err
+
+
+def test_run_derives_num_images_from_barrier_estimate(tmp_path, monkeypatch, capsys):
+    is_p, fs_p = _build_pair(tmp_path)
+    _inject_fake_mlip(monkeypatch)
+
+    monkeypatch.setattr(sys, "argv", [
+        "neb_workflow.py", "run",
+        "--initial", str(is_p), "--final", str(fs_p),
+        "--adsorbate-indices", "3", "4",
+        "--barrier-estimate", "0.7",
+        "--output-dir", str(tmp_path / "out"),
+    ])
+    rc = neb_workflow.main()
+    assert rc == 0
+    assert "Derived --num-images = 7" in capsys.readouterr().out
+
+
+def test_run_warns_when_explicit_images_too_coarse(tmp_path, monkeypatch, capsys):
+    is_p, fs_p = _build_pair(tmp_path)
+    _inject_fake_mlip(monkeypatch)
+
+    monkeypatch.setattr(sys, "argv", [
+        "neb_workflow.py", "run",
+        "--initial", str(is_p), "--final", str(fs_p),
+        "--adsorbate-indices", "3", "4",
+        "--num-images", "5",
+        "--barrier-estimate", "1.5",   # heuristic suggests 15
+        "--output-dir", str(tmp_path / "out"),
+    ])
+    rc = neb_workflow.main()
+    assert rc == 0
+    assert "may be coarse" in capsys.readouterr().out
+
+
+def test_run_diffusion_reaction_type_relaxes_max_disp(tmp_path, monkeypatch, capsys):
+    """A 5 Å direct displacement should pass when --reaction-type=diffusion
+    (max-disp 8) but fail under direct (max-disp 3)."""
+    base = [[0, 0, 0], [4, 0, 0]]
+    is_atoms = Atoms(symbols=["Pt", "Pt", "O"], positions=base + [[6, 6, 6]],
+                      cell=[20, 20, 20], pbc=True)
+    fs_atoms = Atoms(symbols=["Pt", "Pt", "O"], positions=base + [[11, 6, 6]],
+                      cell=[20, 20, 20], pbc=True)  # 5 Å motion
+    is_p = tmp_path / "IS.vasp"
+    fs_p = tmp_path / "FS.vasp"
+    write(str(is_p), is_atoms, format="vasp")
+    write(str(fs_p), fs_atoms, format="vasp")
+
+    _inject_fake_mlip(monkeypatch)
+
+    # direct → fail
+    monkeypatch.setattr(sys, "argv", [
+        "neb_workflow.py", "run",
+        "--initial", str(is_p), "--final", str(fs_p),
+        "--adsorbate-indices", "2",
+        "--num-images", "5",
+        "--reaction-type", "direct",
+        "--output-dir", str(tmp_path / "out_direct"),
+    ])
+    assert neb_workflow.main() == 2
+
+    # diffusion → pass
+    monkeypatch.setattr(sys, "argv", [
+        "neb_workflow.py", "run",
+        "--initial", str(is_p), "--final", str(fs_p),
+        "--adsorbate-indices", "2",
+        "--num-images", "5",
+        "--reaction-type", "diffusion",
+        "--output-dir", str(tmp_path / "out_diff"),
+    ])
+    assert neb_workflow.main() == 0
+
+
+def test_import_mlip_platform_friendly_error(monkeypatch, capsys):
+    import builtins
+    real_import = builtins.__import__
+
+    def blocked_import(name, *args, **kwargs):
+        if name.startswith("mlip_platform"):
+            raise ImportError("blocked for test")
+        return real_import(name, *args, **kwargs)
+
+    for k in list(sys.modules):
+        if k.startswith("mlip_platform"):
+            monkeypatch.delitem(sys.modules, k, raising=False)
+    monkeypatch.setattr(builtins, "__import__", blocked_import)
+
+    with pytest.raises(SystemExit) as excinfo:
+        neb_workflow._import_mlip_platform()
+    assert excinfo.value.code == 2
+    err = capsys.readouterr().err
+    assert "mlip-platform is not available" in err

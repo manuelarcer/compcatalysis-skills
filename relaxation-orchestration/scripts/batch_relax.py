@@ -37,6 +37,39 @@ VALID_UMA_TASKS = ("omat", "oc20", "omol", "odac")
 RUN_META_FILENAME = "compcat_run.json"
 
 
+def _import_mlip_platform():
+    """Lazy-import mlip_platform with a friendly error if it's missing.
+
+    Returns (setup_calculator, run_optimization, detect_mlip).
+    """
+    try:
+        from mlip_platform.cli.utils import setup_calculator, detect_mlip
+        from mlip_platform.core.optimize import run_optimization
+        return setup_calculator, run_optimization, detect_mlip
+    except ImportError as e:
+        print(
+            "ERROR: mlip-platform is not available in this environment.\n"
+            "  Install it (e.g. `pip install mlip-platform`) or activate the env\n"
+            "  that ships it. The --dry-run flag does not require mlip-platform.\n"
+            f"  Original ImportError: {e}",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+
+def resolve_mlip(name: str) -> str:
+    """Resolve an --mlip argument to a concrete model name.
+
+    Pass-through for explicit names. For 'auto', delegate to mlip_platform's
+    detect_mlip() so the choice tracks the platform's logic instead of being
+    pinned in this skill.
+    """
+    if name != "auto":
+        return name
+    _, _, detect_mlip = _import_mlip_platform()
+    return detect_mlip()
+
+
 def find_structures(tree: Path, pattern: str) -> list[Path]:
     """Return sorted list of structure files matching `pattern` under `tree`."""
     if not tree.exists():
@@ -158,11 +191,12 @@ def relax_one(structure: Path, *, mlip: str, uma_task: str, optimizer: str,
     """Run a single optimization. Returns a result row.
 
     Imports happen inside the function so unit tests can monkeypatch the
-    module without the heavy mlip_platform import on collection.
+    module without the heavy mlip_platform import on collection, and so
+    `--dry-run` works in environments without mlip-platform installed.
     """
     from ase.io import read
-    from mlip_platform.cli.utils import setup_calculator
-    from mlip_platform.core.optimize import run_optimization
+
+    setup_calculator, run_optimization, _ = _import_mlip_platform()
 
     atoms = read(str(structure))
     atoms = setup_calculator(atoms, mlip=mlip, uma_task=uma_task)
@@ -202,8 +236,10 @@ def main():
     grp.add_argument("--tree", type=Path, help="Directory tree to search for inputs")
     parser.add_argument("--pattern", default="input.vasp",
                         help="Filename pattern under --tree (default: input.vasp)")
-    parser.add_argument("--mlip", default="uma-s-1p1",
-                        help="MLIP model (default: uma-s-1p1; or 'auto')")
+    parser.add_argument("--mlip", default="auto",
+                        help="MLIP model: 'auto' (let mlip_platform.detect_mlip pick), "
+                             "or an explicit name like 'uma-s-1p1', 'uma-s-1p2', "
+                             "'mace', '7net-mf-ompa'. Default: auto.")
     parser.add_argument("--uma-task", default="auto",
                         choices=["auto", *VALID_UMA_TASKS],
                         help="UMA task head. 'auto' picks omat for bulks "
@@ -211,8 +247,10 @@ def main():
                              "adsorbate systems you must pass an explicit "
                              "task (oc20 metal surfaces, oc22 oxides, oc25 "
                              "solid–liquid interfaces — see SKILL.md).")
-    parser.add_argument("--optimizer", default="fire",
-                        help="Optimizer: fire, bfgs, lbfgs, ... (default: fire)")
+    parser.add_argument("--optimizer", default="bfgs",
+                        help="Optimizer: bfgs, lbfgs, fire, ... Default 'bfgs' "
+                             "matches mlip_platform's choice. Switch to 'fire' "
+                             "if BFGS fails to converge on noisy MLIP forces.")
     parser.add_argument("--fmax", type=float, default=0.03,
                         help="Force convergence threshold eV/Å (default: 0.03)")
     parser.add_argument("--max-steps", type=int, default=300,
@@ -234,6 +272,16 @@ def main():
             print(f"ERROR: no files matched '{args.pattern}' under {args.tree}",
                   file=sys.stderr)
             sys.exit(1)
+
+    if not args.dry_run:
+        # Resolve --mlip auto early so the choice is logged and persisted into
+        # compcat_run.json. Skip in dry-run to keep the dry path mlip_platform-free.
+        try:
+            args.mlip = resolve_mlip(args.mlip)
+            if args.mlip != "auto":
+                print(f"MLIP backend: {args.mlip}")
+        except SystemExit:
+            raise
 
     if args.uma_task == "auto":
         inferred = infer_uma_task(structures)
