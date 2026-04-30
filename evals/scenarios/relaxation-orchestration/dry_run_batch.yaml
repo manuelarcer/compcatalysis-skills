@@ -1,0 +1,18 @@
+name: dry_run_batch
+skill: relaxation-orchestration
+setup:
+  - from: evals/fixtures/Pt111_slab.vasp
+    to: placements/OH/Pt_top_0/input.vasp
+  - from: evals/fixtures/Pt111_slab.vasp
+    to: placements/OH/Pt_top_1/input.vasp
+prompt: |
+  An adsorbate-placement output tree is at ./placements/. Use the
+  relaxation-orchestration skill to PREVIEW what would be relaxed (without
+  actually invoking the MLIP — use the script's --dry-run flag). Save the
+  resulting list of pending structure paths to a file called pending.txt
+  in the current working directory, one path per line.
+expect:
+  artifacts:
+    - path: "pending.txt"
+      checks:
+        - exists

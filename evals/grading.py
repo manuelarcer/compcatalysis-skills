@@ -121,10 +121,57 @@ def grade_artifact(workdir: Path, spec: dict):
     return result
 
 
-def grade_scenario(workdir: Path, expect: dict):
-    """Grade every expected artifact; return aggregate pass + details."""
-    artifacts = [grade_artifact(workdir, spec) for spec in expect.get("artifacts", [])]
+def grade_text(text: str, rubric: dict):
+    """Grade free-form agent output against a text rubric.
+
+    Rubric supports:
+      must_include_any: list of substrings — at least one must appear
+      must_include_all: list of substrings — every one must appear
+      must_not_include: list of substrings — none may appear
+    Comparison is case-insensitive.
+    """
+    text_lc = (text or "").lower()
+    checks = []
+
+    any_terms = rubric.get("must_include_any", [])
+    if any_terms:
+        hit = next((t for t in any_terms if t.lower() in text_lc), None)
+        checks.append({"name": "must_include_any", "pass": hit is not None,
+                       "message": f"matched '{hit}'" if hit else
+                                  f"none of {any_terms} found"})
+
+    all_terms = rubric.get("must_include_all", [])
+    if all_terms:
+        missing = [t for t in all_terms if t.lower() not in text_lc]
+        checks.append({"name": "must_include_all", "pass": not missing,
+                       "message": "all present" if not missing else f"missing {missing}"})
+
+    forbidden = rubric.get("must_not_include", [])
+    if forbidden:
+        hit = [t for t in forbidden if t.lower() in text_lc]
+        checks.append({"name": "must_not_include", "pass": not hit,
+                       "message": "clean" if not hit else f"forbidden phrases: {hit}"})
+
     return {
-        "pass": all(a["pass"] for a in artifacts) if artifacts else False,
+        "pass": all(c["pass"] for c in checks) if checks else False,
+        "checks": checks,
+    }
+
+
+def grade_scenario(workdir: Path, expect: dict, agent_text: str | None = None):
+    """Grade every expected artifact (and optional text rubric); return aggregate."""
+    artifacts = [grade_artifact(workdir, spec) for spec in expect.get("artifacts", [])]
+    text_result = None
+    rubric = expect.get("text_rubric")
+    if rubric is not None:
+        text_result = grade_text(agent_text or "", rubric)
+
+    sub_results = [a["pass"] for a in artifacts]
+    if text_result is not None:
+        sub_results.append(text_result["pass"])
+
+    return {
+        "pass": all(sub_results) if sub_results else False,
         "artifacts": artifacts,
+        "text": text_result,
     }

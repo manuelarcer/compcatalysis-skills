@@ -4,6 +4,9 @@ pythonpath = [
     "materials-project/scripts",
     "surface-generation/scripts",
     "adsorbate-placement/scripts",
+    "relaxation-orchestration/scripts",
+    "adsorption-energy/scripts",
+    "neb-search/scripts",
 ]
 markers = [
     "network: hits live Materials Project API; requires MP_API_KEY and network",

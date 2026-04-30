@@ -1,0 +1,24 @@
+name: detect_bad_pair
+skill: neb-search
+setup:
+  - from: evals/fixtures/neb_bad_IS.vasp
+    to: IS_opt.vasp
+  - from: evals/fixtures/neb_bad_FS.vasp
+    to: FS_opt.vasp
+prompt: |
+  I want to set up an NEB between ./IS_opt.vasp and ./FS_opt.vasp. The
+  adsorbate is a single O atom at index 3. Run the pre-flight validation
+  for this NEB. The validator should flag a problem (the O atom moves 6 Å
+  between IS and FS, which is excessive). Report whether the validator
+  passed or failed in a single sentence in your final answer, and explain
+  what the problem is. Do not run the actual NEB.
+expect:
+  text_rubric:
+    must_include_any:
+      - "fail"
+      - "did not pass"
+      - "excessive"
+    must_not_include:
+      - "validation passed"
+      - "no issues"
+      - "validator passed"

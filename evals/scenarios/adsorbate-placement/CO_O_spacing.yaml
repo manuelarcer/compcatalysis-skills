@@ -1,0 +1,18 @@
+name: CO_O_spacing
+skill: adsorbate-placement
+prompt: |
+  I want to study the lateral interaction between CO* and O* co-adsorbed on a
+  Pt(111) slab using the uma-s-1p1 MLIP with the oc20 task head. At what
+  surface separation (1NN, 2NN, etc.) should I place the two adsorbates?
+  Answer in 2-3 sentences. You do not need to run any commands or write any
+  files; this is a planning question only.
+expect:
+  text_rubric:
+    must_include_any:
+      - "2NN"
+      - "second nearest"
+      - "3.4"
+      - "≥2"
+    must_not_include:
+      - "place them at 1NN"
+      - "1NN is fine"

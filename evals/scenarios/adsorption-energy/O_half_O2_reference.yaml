@@ -1,0 +1,21 @@
+name: O_half_O2_reference
+skill: adsorption-energy
+setup:
+  - from: evals/fixtures/Pt_clean_opt.traj
+    to: clean/opt.traj
+  - from: evals/fixtures/O_on_Pt_opt.traj
+    to: O_fcc/opt.traj
+  - from: evals/fixtures/O2_gas_opt.traj
+    to: gas/O2/opt.traj
+prompt: |
+  Compute the adsorption energy of atomic O* on Pt(111). Inputs:
+    - clean slab: ./clean/opt.traj
+    - slab+O*: ./O_fcc/opt.traj
+    - O2 gas-phase reference: ./gas/O2/opt.traj
+  Use the half-O2 reference convention so the binding energy is
+  reported relative to ½ O2. Save the result to ./eads.csv with label O_fcc.
+expect:
+  artifacts:
+    - path: "eads.csv"
+      checks:
+        - exists

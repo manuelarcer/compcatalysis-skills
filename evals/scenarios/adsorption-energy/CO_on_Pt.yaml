@@ -1,0 +1,21 @@
+name: CO_on_Pt
+skill: adsorption-energy
+setup:
+  - from: evals/fixtures/Pt_clean_opt.traj
+    to: clean/opt.traj
+  - from: evals/fixtures/CO_on_Pt_opt.traj
+    to: CO_top_0/opt.traj
+  - from: evals/fixtures/CO_gas_opt.traj
+    to: gas/CO/opt.traj
+prompt: |
+  Compute the adsorption energy of CO* on Pt(111) using the relaxed
+  trajectories provided:
+    - clean slab: ./clean/opt.traj
+    - slab+CO: ./CO_top_0/opt.traj
+    - gas-phase CO reference: ./gas/CO/opt.traj
+  Save the result to ./eads.csv. The label for the row should be CO_top_0.
+expect:
+  artifacts:
+    - path: "eads.csv"
+      checks:
+        - exists

@@ -136,7 +136,9 @@ def run_scenario(scenario: dict, *, python_bin: str, model: str,
         return result
 
     result["agent"] = run_agent(scenario, workdir, python_bin, model, budget_usd)
-    result["grading"] = grade_scenario(workdir, scenario.get("expect", {}))
+    agent_result = result["agent"].get("agent_result") or {}
+    agent_text = agent_result.get("result") or ""
+    result["grading"] = grade_scenario(workdir, scenario.get("expect", {}), agent_text)
     result["pass"] = result["grading"]["pass"] and result["agent"]["return_code"] == 0
     return result
 
@@ -180,7 +182,7 @@ def main():
     args = p.parse_args()
 
     if args.scenario:
-        paths = [Path(args.scenario)]
+        paths = [Path(args.scenario).resolve()]
     else:
         paths = discover_scenarios(args.skill)
 

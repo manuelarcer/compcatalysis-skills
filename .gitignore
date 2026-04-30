@@ -19,6 +19,10 @@ build/
 !evals/fixtures/*.vasp
 !evals/fixtures/*.cif
 !evals/fixtures/*.xyz
+!evals/fixtures/*.traj
 
 # Eval run outputs
 evals/results/
+
+# Per-project session logs
+.claude/logs/

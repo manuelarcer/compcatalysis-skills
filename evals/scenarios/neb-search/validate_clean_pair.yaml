@@ -1,0 +1,18 @@
+name: validate_clean_pair
+skill: neb-search
+setup:
+  - from: evals/fixtures/neb_O2_diss_IS.vasp
+    to: IS_opt.vasp
+  - from: evals/fixtures/neb_O2_diss_FS.vasp
+    to: FS_opt.vasp
+prompt: |
+  I have an O2 dissociation initial state (./IS_opt.vasp) and final state
+  (./FS_opt.vasp). The two oxygen atoms are at indices 3 and 4. Use the
+  neb-search skill to run the pre-flight setup validation only — do NOT
+  run the actual NEB. Save the validator's stdout to a file called
+  validation.log in the current directory.
+expect:
+  artifacts:
+    - path: "validation.log"
+      checks:
+        - exists

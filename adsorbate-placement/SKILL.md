@@ -139,6 +139,14 @@ Clean slab FixAtoms constraints are preserved. Adsorbate atoms are always free (
 - **Ontop sites only** (monodentate). Bridge/hollow are future extensions — for ionic/oxide surfaces, bridge sites between atoms of opposite charge don't make physical sense for single-atom bonding.
 - **No asetools dependency**: standalone implementation using ASE + numpy. The asetools `SurfaceAnalyzer` was designed for metallic fcc hollow-site chemistry and doesn't apply to general ontop placement.
 
+## Pitfalls
+
+These are MLIP-specific gotchas observed when relaxing the structures produced by this skill. They are not bugs in the placement script — they are reminders to set up the placement correctly for the downstream relaxation.
+
+- **Reactive co-adsorbates at short range.** Placing two reactive species on adjacent (1NN) sites can cause spontaneous reaction during MLIP relaxation. On Pt(111) with `uma-s-1p1`/`oc20`, CO\* + O\* at 1NN separated into CO₂\* during optimization, making lateral-interaction studies impossible. **Rule of thumb:** for co-adsorption / lateral-interaction setups, separate reactive pairs by ≥2NN (≥3.4 Å on Pt(111)). If you must study 1NN, expect either a barrierless reaction or that the structure is unphysical.
+- **Bent/bidentate species are height-sensitive.** Bidentate adsorbates (e.g. bent CO₂ binding through both O atoms) are stable only at low placement heights. With auto-height (covalent radii) they often start too high and desorb to the gas phase during relaxation. Bent CO₂ on Pt(111) needed `--height 1.5` to keep both O atoms within bonding range; 2.0 Å desorbed. **Rule of thumb:** for any bent/multidentate species, override `--height` with a value ≤1.5 Å and check the relaxed structure preserves both bonds.
+- **Multi-atom adsorbates from ASE programmatically.** If you build adsorbates ad-hoc in Python instead of using a file, use `ase.build.molecule('CO')` to get an `Atoms` object — passing the string `'CO'` to `ase.build.add_adsorbate` raises `KeyError`. The `--adsorbate-file` path in this script avoids the issue by reading a structure file directly.
+
 ## Agent Workflow Integration
 
 This skill is the **fifth step** in a catalysis workflow:

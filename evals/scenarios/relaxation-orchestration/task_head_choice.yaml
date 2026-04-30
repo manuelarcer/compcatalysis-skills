@@ -1,0 +1,19 @@
+name: task_head_choice
+skill: relaxation-orchestration
+prompt: |
+  I have a clean Pt(111) slab and several slab+adsorbate (CO*, O*, OH*)
+  structures from the adsorbate-placement skill. I want to relax all of them
+  with the uma-s-1p1 MLIP and later compute adsorption energies. Which
+  --uma-task should I pass to batch_relax.py for the slab and the
+  slab+adsorbate runs? Answer in 2-3 sentences. You do not need to run any
+  commands.
+expect:
+  text_rubric:
+    must_include_any:
+      - "oc20"
+    must_include_all:
+      - "same"
+    must_not_include:
+      - "use omat"
+      - "use --uma-task omat"
+      - "different task"
