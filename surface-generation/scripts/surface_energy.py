@@ -39,6 +39,32 @@ def read_surface_area(slab_atoms):
     return np.linalg.norm(cross)
 
 
+def compute_slab_thickness(slab_atoms, layer_tol=0.5):
+    """Layer-mean slab thickness in Å: <z_top_layer> - <z_bottom_layer>.
+
+    Atoms are sorted by z and split into atomic layers wherever the gap
+    between consecutive z values exceeds `layer_tol` Å. The thickness is
+    the difference between the mean z of the topmost and bottommost
+    layers. This is more robust than a raw `z_max - z_min` span, which is
+    skewed by single protruding atoms (e.g., dangling H on hydroxylated
+    surfaces, an apical O on a buckled metal-oxide layer).
+
+    Falls back to the raw span if no clear interlayer gap is detected.
+    """
+    import numpy as np
+
+    z = np.sort(slab_atoms.get_positions()[:, 2])
+    if len(z) < 2:
+        return 0.0
+    gaps = np.diff(z)
+    breaks = np.where(gaps > layer_tol)[0]
+    if len(breaks) == 0:
+        return float(z[-1] - z[0])
+    bottom = z[: breaks[0] + 1]
+    top = z[breaks[-1] + 1 :]
+    return float(top.mean() - bottom.mean())
+
+
 def compute_surface_energy(e_slab, n_slab, e_bulk, n_bulk, area):
     """Compute surface energy in eV/Å² and J/m².
 
@@ -99,15 +125,29 @@ def write_surfenergy_log(output_path, bulk_info, slab_results):
     slab_results.sort(key=lambda x: x['e_surf_j_m2'])
 
     # Table header
-    lines.append(f"{'Term':<8} {'E_slab (eV)':<16} {'Atoms':<8} {'Area (Å²)':<12} "
-                 f"{'E_surf (eV/Å²)':<16} {'E_surf (J/m²)':<14} {'Stable?':<8}")
-    lines.append("-" * 86)
+    has_thickness = any('thickness' in r for r in slab_results)
+    if has_thickness:
+        lines.append(f"{'Term':<8} {'E_slab (eV)':<16} {'Atoms':<8} {'Area (Å²)':<12} "
+                     f"{'Thickness (Å)':<14} {'E_surf (eV/Å²)':<16} "
+                     f"{'E_surf (J/m²)':<14} {'Stable?':<8}")
+        lines.append("-" * 100)
+    else:
+        lines.append(f"{'Term':<8} {'E_slab (eV)':<16} {'Atoms':<8} {'Area (Å²)':<12} "
+                     f"{'E_surf (eV/Å²)':<16} {'E_surf (J/m²)':<14} {'Stable?':<8}")
+        lines.append("-" * 86)
 
     for i, r in enumerate(slab_results):
         stable = "<<" if i == 0 else ""
-        lines.append(f"{r['name']:<8} {r['e_slab']:<16.6f} {r['n_atoms']:<8} "
-                     f"{r['area']:<12.4f} {r['e_surf_ev_a2']:<16.6f} "
-                     f"{r['e_surf_j_m2']:<14.4f} {stable:<8}")
+        if has_thickness:
+            t = r.get('thickness', float('nan'))
+            lines.append(f"{r['name']:<8} {r['e_slab']:<16.6f} {r['n_atoms']:<8} "
+                         f"{r['area']:<12.4f} {t:<14.4f} "
+                         f"{r['e_surf_ev_a2']:<16.6f} "
+                         f"{r['e_surf_j_m2']:<14.4f} {stable:<8}")
+        else:
+            lines.append(f"{r['name']:<8} {r['e_slab']:<16.6f} {r['n_atoms']:<8} "
+                         f"{r['area']:<12.4f} {r['e_surf_ev_a2']:<16.6f} "
+                         f"{r['e_surf_j_m2']:<14.4f} {stable:<8}")
 
     lines.append("")
     best = slab_results[0]
@@ -117,6 +157,11 @@ def write_surfenergy_log(output_path, bulk_info, slab_results):
     if len(slab_results) > 1:
         diff = slab_results[1]['e_surf_j_m2'] - slab_results[0]['e_surf_j_m2']
         lines.append(f"Energy difference to next: {diff:.4f} J/m²")
+
+    if has_thickness:
+        lines.append("")
+        lines.append("Thickness = <z_top_layer> - <z_bottom_layer> "
+                     "(layer-mean, robust to dangling atoms; layer_tol = 0.5 Å).")
 
     lines.append("=" * 70)
 
@@ -169,6 +214,7 @@ def main():
         e_slab, slab_atoms = read_energy_from_traj(traj_path)
         n_slab = len(slab_atoms)
         area = read_surface_area(slab_atoms)
+        thickness = compute_slab_thickness(slab_atoms)
 
         e_surf_ev_a2, e_surf_j_m2 = compute_surface_energy(
             e_slab, n_slab, e_bulk, n_bulk, area
@@ -181,6 +227,7 @@ def main():
             'e_slab': e_slab,
             'n_atoms': n_slab,
             'area': area,
+            'thickness': thickness,
             'e_surf_ev_a2': e_surf_ev_a2,
             'e_surf_j_m2': e_surf_j_m2,
         })

@@ -68,7 +68,9 @@ python generate_slabs.py --input Co3O4_bulk.vasp --miller 1 1 0 --ftol 0.05 --al
 | `--min-slab-size` | Minimum slab thickness (Å) | `10.0` |
 | `--min-vacuum-size` | Minimum vacuum thickness (Å) | `15.0` |
 | `--all-terminations` | Generate all unique terminations | `False` (most stable only) |
-| `--symmetrize` | Force symmetric slabs | `False` |
+| `--symmetrize` | Pass `symmetrize=True` to pymatgen SlabGenerator (does not always succeed) | `False` |
+| `--require-symmetric` | Drop terminations whose slab is not symmetric (top != bottom) | `False` |
+| `--require-stoichiometric` | Drop terminations whose composition does not match bulk | `False` |
 | `--center-slab` | Center slab in vacuum | `True` |
 | `--fix-bottom` | Fraction of atoms to fix at bottom | `0.5` |
 | `--output` | Output filename (single slab) | auto-generated |

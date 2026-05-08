@@ -44,11 +44,11 @@ workflows. Two modes:
 
 ```bash
 # Relax a single structure — same effect as `optimize run --structure ...`
-python batch_relax.py --structure slab.vasp --mlip uma-s-1p1 --uma-task oc20 --fmax 0.03
+python batch_relax.py --structure slab.vasp --mlip uma-s-1p2 --uma-task oc20 --fmax 0.03
 
 # Relax everything under a tree (e.g. adsorbate-placement output)
 python batch_relax.py --tree placements/ --pattern 'input.vasp' \
-    --mlip uma-s-1p1 --uma-task oc20 --fmax 0.03
+    --mlip uma-s-1p2 --uma-task oc20 --fmax 0.03
 
 # Resume an interrupted batch — skip already-converged structures
 python batch_relax.py --tree placements/ --resume
@@ -64,8 +64,8 @@ python batch_relax.py --tree placements/ --dry-run
 | `--structure` | Single input structure path | — |
 | `--tree` | Directory tree to scan for inputs | — |
 | `--pattern` | Filename pattern under `--tree` | `input.vasp` |
-| `--mlip` | MLIP model (`uma-s-1p1`, `uma-s-1p2`, `mace`, `7net-mf-ompa`, `auto`) | `auto` |
-| `--uma-task` | UMA task head: `omat`, `oc20`, `omol`, `odac`, or `auto` | `auto` |
+| `--mlip` | MLIP model (`uma-s-1p2`, `uma-s-1p1`, `mace`, `7net-mf-ompa`, `auto`) | `auto` |
+| `--uma-task` | UMA task head: `omat`, `oc20`, `oc22`, `oc25`, `omol`, `odac`, `omc`, or `auto` | `auto` |
 | `--optimizer` | `bfgs`, `lbfgs`, `fire`, ... | `bfgs` |
 | `--fmax` | Force convergence threshold (eV/Å) | `0.03` |
 | `--max-steps` | Maximum optimization steps | `300` |
@@ -100,10 +100,11 @@ task head**, or the energies are not subtractable.
 |---|---|---|---|
 | Bulk crystal optimization | `omat` | supported | General materials, no surfaces |
 | Metal slab + adsorbate + gas-phase reference (Pt, Cu, Ni, …) | `oc20` | supported | OC20 is the canonical surface-chemistry head |
-| Oxide slab + adsorbate + gas-phase reference (CoOOH, Co₃O₄, TiO₂) | `oc22` | requires `mlip_platform` to expose it | use `oc20` until then and verify against literature |
-| Solid–liquid interface with explicit solvent | `oc25` | requires `mlip_platform` to expose it | only when explicit water/electrolyte is present |
+| Oxide slab + adsorbate + gas-phase reference (CoOOH, Co₃O₄, TiO₂) | `oc22` | supported (uma-s-1p2 only) | Verified on fairchem-core 2.18.0; accepted as raw string even though not yet in `UMATask` enum |
+| Solid–liquid interface with explicit solvent | `oc25` | supported (uma-s-1p2 only) | Only when explicit water/electrolyte is present — not a general replacement for `oc20` |
 | Isolated molecules in vacuum | `omol` | supported | Not used when the molecule is a reference for an adsorption energy on a slab — use the surface task head instead |
 | OC20 datasets / DAC | `odac` | supported | rare in standard catalysis workflows |
+| Molecular crystals | `omc` | supported (uma-s-1p2 only) | rare in heterogeneous catalysis workflows |
 
 For any one workflow (`clean slab` + `slab+ads` + `gas-phase ads ref`), pick
 one task head and use it for all three.
@@ -180,7 +181,7 @@ This skill is steps **2, 4, and 6** in the catalysis pipeline:
 1. Fetch bulk → bulk POSCAR
 2. **Optimize bulk** (this skill, `--uma-task omat`) → relaxed bulk
 3. Generate surfaces → slab POSCARs
-4. **Optimize clean slabs** (this skill, `--uma-task oc20`/`oc22`) → relaxed slabs
+4. **Optimize clean slabs** (this skill, `--uma-task oc20` for metals / `oc22` for oxides) → relaxed slabs
 5. Place adsorbates → slab+adsorbate inputs
 6. **Optimize slab+adsorbate** (this skill, batch over the placement tree)
 7. Compute adsorption energies → use the adsorption-energy skill
@@ -192,9 +193,10 @@ default `--pattern input.vasp` already matches that skill's output naming.
 
 - **Picking `--mlip`**: `auto` is the default — it delegates to
   `mlip_platform.detect_mlip()`, so this skill tracks platform improvements
-  automatically. Pass an explicit name (`uma-s-1p1`, `uma-s-1p2`, `mace`,
+  automatically. Pass an explicit name (`uma-s-1p2`, `uma-s-1p1`, `mace`,
   `7net-mf-ompa`) when you need a specific checkpoint for reproducibility
-  or for cross-MLIP comparisons.
+  or for cross-MLIP comparisons. `uma-s-1p2` is the current recommended
+  default (≈50% faster, ≈40% more accurate than 1p1).
 - **Picking `--uma-task`**: see the table above. When unsure, ask whether
   the system is a metal, oxide, or solid–liquid interface.
 - **Batch vs single**: if the user has more than two structures, prefer

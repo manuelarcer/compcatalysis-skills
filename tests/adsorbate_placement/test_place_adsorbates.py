@@ -128,13 +128,14 @@ def test_generate_all_placements_writes_tree(pt111_slab, tmp_path):
     specs = [{"name": "OH", "atoms": ads_atoms, "binding_symbol": binding}]
 
     out_dir = tmp_path / "out"
-    results = pa.generate_all_placements(
+    written, skipped = pa.generate_all_placements(
         slab, adsorbate_specs=specs, site_species=["Pt"],
         output_dir=out_dir, depth=2.0,
     )
 
-    assert len(results) >= 1
-    for r in results:
+    assert len(written) >= 1
+    assert skipped == []
+    for r in written:
         assert r["adsorbate"] == "OH"
         assert r["site_species"] == "Pt"
         assert r["site_label"].startswith("Pt_top_")

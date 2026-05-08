@@ -65,6 +65,9 @@ python place_adsorbates.py --slab slab.vasp --adsorbates O --sites Pt --depth 1.
 | `--output-dir` | Root output directory | `.` |
 | `--height` | Height above surface site (Å). Auto if omitted. | auto |
 | `--depth` | Depth from top for surface detection (Å) | `2.0` |
+| `--clash-factor` | Clash threshold as a fraction of `(r_cov_slab + r_cov_ads)`. Lower = stricter. | `0.7` |
+| `--allow-clashes` | Write clashing placements anyway (with warning). | off |
+| `--rotations` | Number of equally-spaced rotations of the adsorbate around the surface normal to try; the best clearance wins. Set to 1 to disable. | `12` |
 
 At least one of `--adsorbates` or `--adsorbate-file` is required.
 
@@ -130,6 +133,68 @@ Each `input.vasp` is a complete slab+adsorbate structure ready for MLIP relaxati
 - **OH**: O at height, H at +0.98 Å straight up from O
 - **OOH**: O1 at height, O2 at 1.21 Å tilted 60° from vertical, H at 0.98 Å from O2 along O1→O2
 
+#### Orientation Search
+
+For each (adsorbate, site) pair the script tries `--rotations` equally
+spaced rotations of the adsorbate around the surface normal (z-axis) and
+keeps the orientation that **maximizes the minimum distance from any
+adsorbate atom to any non-site slab atom**. The chosen angle and the
+resulting clearance are reported in the summary table.
+
+This matters most for tilted multi-atom adsorbates. Example: OOH has the
+canonical Nørskov geometry of an O—O bond at 60° from the surface
+normal with a terminal H. On a corrugated oxyhydroxide surface, the
+default orientation (tilt pointing +x) can land the OH-end oxygen ~1 Å
+from a *neighboring* lattice H — close enough to abstract the H and form
+H₂O during the MLIP relaxation. Rotating the OOH around z lets the tilt
+point into open space instead. Concretely on CoOOH(001) Co_top_1, the
+search picked 60° and the OOH's middle O moved from 1.028 Å to 1.987 Å
+from the nearest lattice H (no longer in the H-abstraction zone).
+
+For adsorbates that are symmetric under z-rotation (single atom; OH with
+H straight up; CO with C–O on the z-axis), every angle gives the same
+clearance and the search trivially picks 0°. The cost of trying 12
+rotations on a symmetric adsorbate is negligible.
+
+The intrinsic adsorbate geometry (bond lengths, tilt angle) is *not*
+modified — only its rotational orientation around the surface normal.
+If you need a different intrinsic geometry (e.g. perpendicular OOH
+instead of 60°-tilted), pass it via `--adsorbate-file` with the desired
+geometry pre-baked into the structure file.
+
+#### Clash Detection
+
+After each placement, the script checks every placed adsorbate atom against
+every non-site slab atom (the site atom is the intended bonding partner and
+is always excluded). A **clash** is flagged when
+
+```
+distance < clash_factor × (r_cov_slab_atom + r_cov_ads_atom)
+```
+
+with `clash_factor = 0.7` by default. Clashing placements are **skipped by
+default** and reported in a `Skipped` table at the end of the run, e.g.
+
+```
+=== Skipped (clash detected — pass --allow-clashes to keep) ===
+Adsorbate    Site            Closest non-site contact
+--------------------------------------------------------------------------------
+O            O_top_1         O24↔H7  d=0.364 Å  (threshold 0.679)
+```
+
+The canonical case this catches: placing a new O on a *protonated* lattice O
+(an existing surface OH). The auto-height puts the new O at sum-of-radii
+distance above the lattice O — but if a lattice H is sitting ~1 Å directly
+above that lattice O (a vertical OH ligand), the new O ends up ~0.4 Å from
+that H. That's well inside any covalent O–H bond length and produces
+catastrophic forces during MLIP relaxation (configuration explosion or
+violent restructuring).
+
+Use `--allow-clashes` only if you intentionally want to study replacement
+or proton-transfer chemistry on those sites. Otherwise pre-process the slab
+upstream (e.g. deprotonate the relevant surface OH) before running this
+script.
+
 #### Selective Dynamics
 
 Clean slab FixAtoms constraints are preserved. Adsorbate atoms are always free (not included in FixAtoms).
@@ -140,6 +205,32 @@ Clean slab FixAtoms constraints are preserved. Adsorbate atoms are always free (
 - **No asetools dependency**: standalone implementation using ASE + numpy. The asetools `SurfaceAnalyzer` was designed for metallic fcc hollow-site chemistry and doesn't apply to general ontop placement.
 
 ## Pitfalls
+
+- **Tilted adsorbates pointing into a neighboring lattice atom.** OOH and
+  any adsorbate with a non-vertical tilt has rotational degrees of freedom
+  around the surface normal that the user does not normally specify. The
+  default orientation can place the tilted end ≲ 1 Å from a neighboring
+  lattice atom (especially a lattice H), close enough to react during
+  relaxation (e.g. H abstraction → H₂O). The orientation search (see the
+  *Orientation Search* section above) handles this automatically by
+  picking the rotation with the largest minimum non-site clearance — but
+  it can only rotate; it cannot move the binding atom. If the binding
+  atom itself is the close contact, no rotation can fix it; the placement
+  may still need to be skipped or the slab pre-treated.
+- **Placing an O-binding adsorbate on a protonated lattice O.** On
+  oxyhydroxide surfaces (CoOOH, NiOOH, FeOOH, …) some surface O atoms
+  already carry an H pointing up — they are *lattice OH groups*, not
+  bare O. Adsorbing O / OH / OOH on top of such a site at the auto-height
+  (sum of covalent radii ≈ 1.32 Å for O on O) places the new O *inside*
+  the lattice O–H bond, ~0.3–0.4 Å from the existing H. The relaxation
+  will either explode (huge repulsive forces) or violently rearrange
+  (proton transfer to the new O, displacing the original O, etc.) —
+  either way the resulting energy is not interpretable as "O\* on that
+  site". The clash-detection in this script catches the geometric case
+  and skips it by default; if a particular surface has more subtle
+  protonation patterns (in-plane H, sideways OH ligands), bump
+  `--clash-factor` upward (e.g. 1.0) for a stricter check or pre-process
+  the slab to deprotonate the chosen sites before placement.
 
 These are MLIP-specific gotchas observed when relaxing the structures produced by this skill. They are not bugs in the placement script — they are reminders to validate the placement *after the downstream relaxation*. Concrete cutoffs (separation distance, height) depend on the surface, the MLIP, and the task head; the only reliable diagnostic is post-relaxation inspection.
 

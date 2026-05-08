@@ -124,6 +124,41 @@ def filter_unique_top_surfaces(slabs, depth=1.5):
     return unique
 
 
+def is_stoichiometric(slab, bulk_structure):
+    """Check whether a slab has the same reduced composition as its bulk parent."""
+    from pymatgen.core import Composition
+    return (Composition(slab.composition).reduced_formula
+            == Composition(bulk_structure.composition).reduced_formula)
+
+
+def filter_sym_stoich(slabs, bulk_structure, require_symmetric=False,
+                      require_stoichiometric=False):
+    """Filter slabs by symmetry and/or stoichiometry constraints.
+
+    Returns
+    -------
+    kept : list of Slab
+        Slabs satisfying every active constraint.
+    dropped : list of (slab, reason)
+        Rejected slabs with a short reason string for reporting.
+    """
+    if not (require_symmetric or require_stoichiometric):
+        return list(slabs), []
+
+    kept, dropped = [], []
+    for slab in slabs:
+        reasons = []
+        if require_symmetric and not slab.is_symmetric():
+            reasons.append("asymmetric")
+        if require_stoichiometric and not is_stoichiometric(slab, bulk_structure):
+            reasons.append("non-stoichiometric")
+        if reasons:
+            dropped.append((slab, "+".join(reasons)))
+        else:
+            kept.append(slab)
+    return kept, dropped
+
+
 def generate_slabs_for_miller(structure, miller_index, min_slab_size=10.0,
                                min_vacuum_size=15.0, center_slab=True,
                                symmetrize=False, ftol=0.1,
@@ -285,7 +320,9 @@ def process_single_miller(structure, miller_index, all_terminations=False,
                            min_slab_size=10.0, min_vacuum_size=15.0,
                            center_slab=True, symmetrize=False,
                            ftol=0.1, max_broken_bonds=0, bonds=None,
-                           fix_bottom=0.5):
+                           fix_bottom=0.5,
+                           require_symmetric=False,
+                           require_stoichiometric=False):
     """Generate slabs for a single Miller index."""
     from pymatgen.core import Composition
 
@@ -304,6 +341,24 @@ def process_single_miller(structure, miller_index, all_terminations=False,
     if not slabs:
         print(f"No valid slabs found for {miller_display(miller_index)}.", file=sys.stderr)
         print("Try: --max-broken-bonds 1 or adjust --bonds", file=sys.stderr)
+        sys.exit(1)
+
+    n_total = len(slabs)
+    slabs, dropped = filter_sym_stoich(
+        slabs, structure,
+        require_symmetric=require_symmetric,
+        require_stoichiometric=require_stoichiometric,
+    )
+    if dropped:
+        print(f"  Dropped {len(dropped)}/{n_total} termination(s) by filter:")
+        for slab, reason in dropped:
+            comp = slab.composition.reduced_formula
+            print(f"    shift={slab.shift:.4f}, atoms={slab.num_sites}, "
+                  f"comp={comp}, reason={reason}")
+    if not slabs:
+        print(f"All terminations rejected by --require-symmetric / "
+              f"--require-stoichiometric for {miller_display(miller_index)}.",
+              file=sys.stderr)
         sys.exit(1)
 
     print(f"\n{formula} {miller_display(miller_index)}: {len(slabs)} termination(s)")
@@ -345,7 +400,9 @@ def process_max_index(structure, max_index, output_dir=".", fmt="vasp",
                        min_slab_size=10.0, min_vacuum_size=15.0,
                        center_slab=True, symmetrize=False,
                        ftol=0.1, max_broken_bonds=0, bonds=None,
-                       fix_bottom=0.5):
+                       fix_bottom=0.5,
+                       require_symmetric=False,
+                       require_stoichiometric=False):
     """Generate most stable termination for all distinct surfaces up to max_index."""
     from pymatgen.core import Composition
 
@@ -373,6 +430,19 @@ def process_max_index(structure, max_index, output_dir=".", fmt="vasp",
         if not slabs:
             print(f"{miller_display(mi)}: no valid slabs (all break bonds)")
             continue
+
+        n_total = len(slabs)
+        slabs, dropped = filter_sym_stoich(
+            slabs, structure,
+            require_symmetric=require_symmetric,
+            require_stoichiometric=require_stoichiometric,
+        )
+        if not slabs:
+            print(f"{miller_display(mi)}: all {n_total} terminations rejected by filter")
+            continue
+        if dropped:
+            print(f"{miller_display(mi)}: dropped {len(dropped)}/{n_total} "
+                  f"terminations by filter")
 
         slab = slabs[0]
         n_fixed = 0
@@ -431,6 +501,14 @@ def main():
     parser.add_argument("--fix-bottom", type=float, default=0.5,
                         help="Fraction of atoms to fix at bottom (default: 0.5). "
                              "Set to 0 to disable constraints.")
+    parser.add_argument("--require-symmetric", action="store_true",
+                        help="Drop terminations whose slab is not symmetric "
+                             "(top != bottom). Affects --all-terminations and "
+                             "--max-index modes.")
+    parser.add_argument("--require-stoichiometric", action="store_true",
+                        help="Drop terminations whose composition does not match "
+                             "bulk stoichiometry. Pairs naturally with "
+                             "--require-symmetric for clean Wulff calculations.")
 
     args = parser.parse_args()
 
@@ -472,6 +550,8 @@ def main():
             max_broken_bonds=args.max_broken_bonds,
             bonds=bonds,
             fix_bottom=args.fix_bottom,
+            require_symmetric=args.require_symmetric,
+            require_stoichiometric=args.require_stoichiometric,
         )
         return
 
@@ -491,6 +571,8 @@ def main():
         max_broken_bonds=args.max_broken_bonds,
         bonds=bonds,
         fix_bottom=args.fix_bottom,
+        require_symmetric=args.require_symmetric,
+        require_stoichiometric=args.require_stoichiometric,
     )
 
 

@@ -13,11 +13,11 @@ Requires:
 Usage:
     # Single structure
     python batch_relax.py --structure slab.vasp \\
-        --mlip uma-s-1p1 --uma-task oc20 --fmax 0.03
+        --mlip uma-s-1p2 --uma-task oc20 --fmax 0.03
 
     # All input.vasp files under a tree (e.g. adsorbate-placement output)
     python batch_relax.py --tree placements/ --pattern 'input.vasp' \\
-        --mlip uma-s-1p1 --uma-task oc20 --fmax 0.03
+        --mlip uma-s-1p2 --uma-task oc20 --fmax 0.03
 
     # Resume — skip directories that already have a converged opt run
     python batch_relax.py --tree placements/ --resume
@@ -33,7 +33,7 @@ import sys
 import time
 from pathlib import Path
 
-VALID_UMA_TASKS = ("omat", "oc20", "omol", "odac")
+VALID_UMA_TASKS = ("omat", "oc20", "oc22", "oc25", "omol", "odac", "omc")
 RUN_META_FILENAME = "compcat_run.json"
 
 
@@ -238,7 +238,7 @@ def main():
                         help="Filename pattern under --tree (default: input.vasp)")
     parser.add_argument("--mlip", default="auto",
                         help="MLIP model: 'auto' (let mlip_platform.detect_mlip pick), "
-                             "or an explicit name like 'uma-s-1p1', 'uma-s-1p2', "
+                             "or an explicit name like 'uma-s-1p2', 'uma-s-1p1', "
                              "'mace', '7net-mf-ompa'. Default: auto.")
     parser.add_argument("--uma-task", default="auto",
                         choices=["auto", *VALID_UMA_TASKS],
@@ -293,10 +293,8 @@ def main():
                 "systems pass an explicit --uma-task. See the SKILL.md "
                 "task-head decision table:\n"
                 "  oc20 = metal surface chemistry (Pt, Cu, Ni, ...)\n"
-                "  oc22 = oxide surfaces (CoOOH, Co3O4, TiO2, ...) "
-                "[requires mlip_platform support]\n"
-                "  oc25 = solid–liquid interfaces with explicit solvent "
-                "[requires mlip_platform support]\n"
+                "  oc22 = oxide surfaces (CoOOH, Co3O4, TiO2, ...) [uma-s-1p2 only]\n"
+                "  oc25 = solid–liquid interfaces with explicit solvent [uma-s-1p2 only]\n"
                 "  omat = bulk crystals\n"
                 "  omol = isolated molecules in vacuum",
                 file=sys.stderr)

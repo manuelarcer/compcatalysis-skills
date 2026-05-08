@@ -83,6 +83,62 @@ def test_find_traj_in_dir_none_when_empty(tmp_path):
     assert se.find_traj_in_dir(d) is None
 
 
+def test_compute_slab_thickness_simple_layers():
+    # Three layers at z = 0, 2, 4 (gap 2 Å > tol 0.5)
+    atoms = Atoms("Pt6",
+                  positions=[[0, 0, 0], [1, 0, 0],
+                             [0, 0, 2], [1, 0, 2],
+                             [0, 0, 4], [1, 0, 4]],
+                  cell=[2, 2, 30], pbc=True)
+    assert se.compute_slab_thickness(atoms) == pytest.approx(4.0)
+
+
+def test_compute_slab_thickness_robust_to_dangling_atom():
+    # Two clean layers at z=0,2; one protruding H at z=5
+    # Layer-mean thickness should be 5 - 0 = 5 (top "layer" is single atom).
+    # The point: a single dangling atom doesn't appear in the bottom layer
+    # mean, so the bottom mean stays at 0 instead of being averaged up.
+    atoms = Atoms("Pt4H",
+                  positions=[[0, 0, 0], [1, 0, 0],
+                             [0, 0, 2], [1, 0, 2],
+                             [0, 0, 5]],
+                  cell=[2, 2, 30], pbc=True)
+    # bottom layer = {0, 0} -> mean 0; top layer = {5} -> mean 5
+    assert se.compute_slab_thickness(atoms) == pytest.approx(5.0)
+
+
+def test_compute_slab_thickness_buckled_layer_groups_together():
+    # A buckled layer (z spread 0.3 Å) should group as one layer
+    atoms = Atoms("Pt4",
+                  positions=[[0, 0, 0.0], [1, 0, 0.3],
+                             [0, 0, 2.0], [1, 0, 2.2]],
+                  cell=[2, 2, 30], pbc=True)
+    # bottom mean = 0.15, top mean = 2.1 -> 1.95
+    assert se.compute_slab_thickness(atoms) == pytest.approx(1.95)
+
+
+def test_compute_slab_thickness_single_layer_falls_back_to_span():
+    atoms = Atoms("Pt2",
+                  positions=[[0, 0, 0.0], [1, 0, 0.4]],
+                  cell=[2, 2, 30], pbc=True)
+    assert se.compute_slab_thickness(atoms) == pytest.approx(0.4)
+
+
+def test_write_surfenergy_log_includes_thickness_column(tmp_path):
+    bulk_info = {"path": "bulk.traj", "energy": -24.0, "n_atoms": 4}
+    slab_results = [
+        {"name": "t0", "e_slab": -47.0, "n_atoms": 8, "area": 16.0,
+         "thickness": 6.5,
+         "e_surf_ev_a2": 0.03, "e_surf_j_m2": 0.48, "path": "x", "traj": "y"},
+    ]
+    out = tmp_path / "surfenergy.log"
+    se.write_surfenergy_log(out, bulk_info, slab_results)
+    text = out.read_text()
+    assert "Thickness (Å)" in text
+    assert "6.5000" in text
+    assert "z_top_layer" in text
+
+
 def test_write_surfenergy_log_sorts_and_marks_stable(tmp_path, capsys):
     bulk_info = {"path": "bulk.traj", "energy": -24.0, "n_atoms": 4}
     slab_results = [

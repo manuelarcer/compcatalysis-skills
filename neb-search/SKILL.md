@@ -80,7 +80,7 @@ python neb_workflow.py run \
     --initial IS_opt.vasp --final FS_opt.vasp \
     --adsorbate-indices 36 37 \
     --num-images 7 \
-    --mlip uma-s-1p1 --uma-task oc20 --fmax 0.05 \
+    --mlip uma-s-1p2 --uma-task oc20 --fmax 0.05 \
     --max-steps 600 \
     --barrier-estimate 0.7 \
     --monotonic-pairs 36-37 \
